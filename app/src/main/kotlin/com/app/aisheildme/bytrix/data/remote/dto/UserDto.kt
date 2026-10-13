@@ -81,13 +81,6 @@ data class UserDto(
     @SerialName("patient_medical_detail") val patientMedicalDetail: PatientMedicalDetailDto? = null,
     @SerialName("notification_settings") val notificationSettings: NotificationSettingsDto? = null,
 
-    @SerialName("stripe_customer_id")
-    @Serializable(with = FlexibleStringSerializer::class) val stripeCustomerId: String? = null,
-    @SerialName("connect_account_id")
-    @Serializable(with = FlexibleStringSerializer::class) val connectAccountId: String? = null,
-    @SerialName("transfer_capabilities")
-    @Serializable(with = FlexibleBooleanSerializer::class) val transferCapabilities: Boolean = false,
-
     @SerialName("total_reviews")
     @Serializable(with = FlexibleIntSerializer::class) val totalReviews: Int = 0,
     @SerialName("total_ratings")

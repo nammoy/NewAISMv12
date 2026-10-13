@@ -104,7 +104,7 @@ Each has a comment at the site explaining why:
 
 - **Secrets** moved out of source into `local.properties`. They were committed
   in `api_constants.dart`; **they remain in this repo's git history**, so
-  rotate the AI-ShieldMe app token and Stripe key if they are sensitive.
+  rotate the AI-ShieldMe app token if it is sensitive. (Stripe was removed — the app has no payments.)
 - **Gemini Nano** now calls ML Kit directly — `OnDeviceGenAi.kt` was already
   Kotlin, so only its `MethodChannel` wrapper was removed.
 - **The 401 handler** clears the session instead of navigating; the nav host

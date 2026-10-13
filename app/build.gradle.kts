@@ -32,7 +32,6 @@ android {
 
         buildConfigField("String", "BASE_URL", "\"https://aishield.facevitals.ai/\"")
         buildConfigField("String", "APP_TOKEN", "\"${secret("AISHIELD_APP_TOKEN")}\"")
-        buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"${secret("STRIPE_PUBLISHABLE_KEY")}\"")
     }
 
     buildTypes {
