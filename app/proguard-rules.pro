@@ -9,7 +9,7 @@
 -keep,allowobfuscation interface <1>
 -keepattributes Signature, Exceptions
 
--keep enum com.app.aisheildme.bytrix.navigation.** { *; }
+-keep enum com.app.aisheildme.namtran.navigation.** { *; }
 
 -keepattributes RuntimeVisibleAnnotations, AnnotationDefault
 -if @kotlinx.serialization.Serializable class **
@@ -29,4 +29,4 @@
     public static <1> INSTANCE;
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep class com.app.aisheildme.bytrix.navigation.** { *; }
+-keep class com.app.aisheildme.namtran.navigation.** { *; }

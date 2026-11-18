@@ -18,7 +18,7 @@ fun secret(key: String, fallback: String = ""): String =
     (localProps.getProperty(key) ?: System.getenv(key) ?: fallback)
 
 android {
-    namespace = "com.app.aisheildme.bytrix"
+    namespace = "com.app.aisheildme.namtran"
     compileSdk = 35
 
     defaultConfig {
