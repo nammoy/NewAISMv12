@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+.kotlin/
+
+# Local configuration (SDK path, secrets)
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/libraries/
+.idea/caches/
+.idea/modules.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetDropDown.xml
+.idea/deploymentTargetSelector.xml
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
