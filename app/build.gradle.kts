@@ -21,7 +21,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.app.aisheildme.bytrix"
+        applicationId = "com.app.aisheildme.namtran"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

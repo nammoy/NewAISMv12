@@ -142,6 +142,5 @@ Before the first build, copy `local.properties.example` to `local.properties`
 and fill in the token values. `google-services.json` is git-ignored — copy it
 from the Firebase console (project `ai-sheildme-dev`).
 
-Note: `minSdk 26` is required by AICore/Gemini Nano, and the debug build has
-**no** `applicationIdSuffix` because `google-services.json` registers only
-`com.app.aisheildme.bytrix`.
+Note: `minSdk 26` is required by AICore/Gemini Nano. The application ID is
+`com.app.aisheildme.namtran`. Phase 1 does not use Firebase; when the Firebase phase starts, register `com.app.aisheildme.namtran` in your own Firebase and replace `google-services.json` with the file it generates.
