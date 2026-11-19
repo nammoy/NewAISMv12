@@ -5,26 +5,10 @@ import com.app.aisheildme.namtran.domain.model.User
 
 object AuthFlow {
 
-    fun routeAfterAuth(navController: NavController, user: User, email: String) {
+    fun routeAfterAuth(navController: NavController, user: User, @Suppress("UNUSED_PARAMETER") email: String) {
         when {
-            !user.isEmailVerified ->
-                navController.navigate(VerifyEmailRoute(email, VerifyFlow.Signup))
-
             !user.isPinSet -> navController.navigateAndClear(CreateVaultPinRoute)
-
             else -> navController.navigateAndClear(DashboardRoute)
-        }
-    }
-
-    fun routeAfterOtpVerified(navController: NavController, user: User) {
-        when {
-            !user.hasProfileSetup -> navController.navigate(SetupProfileRoute) {
-                popUpTo<VerifyEmailRoute> { inclusive = true }
-            }
-            user.isPinSet -> navController.navigateAndClear(DashboardRoute)
-            else -> navController.navigate(CreateVaultPinRoute) {
-                popUpTo<VerifyEmailRoute> { inclusive = true }
-            }
         }
     }
 }

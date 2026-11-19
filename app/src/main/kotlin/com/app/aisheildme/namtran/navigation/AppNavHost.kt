@@ -105,15 +105,13 @@ fun AppNavHost(
 
         composable<BasicInfoRoute> {
             BasicInfoScreen(
-                onRegistered = { email ->
-                    navController.navigate(VerifyEmailRoute(email, VerifyFlow.Signup))
-                },
+                // The account is created and signed in on the device; no email code step.
+                onRegistered = { navController.navigateAndClear(SetupProfileRoute) },
             )
         }
 
         composable<VerifyEmailRoute> {
             VerifyEmailScreen(
-                onVerified = { user -> AuthFlow.routeAfterOtpVerified(navController, user) },
                 onResetToken = { token ->
                     navController.navigateReplacing(ResetPasswordRoute(token))
                 },

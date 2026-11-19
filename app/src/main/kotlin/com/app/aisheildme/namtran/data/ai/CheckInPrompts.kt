@@ -66,6 +66,32 @@ ${"\"\"\""}
         """.trimIndent()
     }
 
+    /** The on-device patient review: summary + recommendation, grounded in form and findings. */
+    fun patientReview(formText: String, findings: List<String>): String {
+        val findingText = if (findings.isEmpty()) "None" else findings.joinToString("\n") { "- $it" }
+        val body = formText.take(OnDeviceAi.MAX_PROMPT_CHARS - 1100 - findingText.length.coerceAtMost(800))
+        return """
+You are a clinical intake assistant preparing a pre-visit review for the clinician.
+
+Rules:
+- Use ONLY facts from the CHECK-IN and the SCREENING FINDINGS below. Never invent a value.
+- Do not diagnose and do not prescribe. Recommend what the clinician should look at first.
+- If there are critical findings, mention them first.
+- Output exactly the two lines below and nothing else.
+
+SUMMARY: <2-3 sentences: who the patient is, why they came, the most important facts>
+RECOMMENDATION: <1-2 sentences: what the clinician should review or confirm first>
+
+SCREENING FINDINGS:
+${findingText.take(800)}
+
+CHECK-IN:
+${"\"\"\""}
+$body
+${"\"\"\""}
+        """.trimIndent()
+    }
+
     fun formSummary(formText: String): String {
         val body = formText.take(OnDeviceAi.MAX_PROMPT_CHARS - 700)
         return """

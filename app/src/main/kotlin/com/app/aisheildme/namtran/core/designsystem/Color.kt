@@ -23,6 +23,10 @@ object AppColors {
     val LightBorder = Color(0xFFEDF1F3)
     val BorderColor = Color(0xFFB9B9B9)
 
+    /** Strong red for required fields the user still has to complete (readable on white). */
+    val RequiredRed = Color(0xFFC62828)
+    val SecondaryText = Color(0xFF707070)
+
     val CheckboxUnchecked = Color(0xFFF9F9F9)
     val CheckboxBorder = Color(0xFFD9D9D9)
 

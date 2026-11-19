@@ -223,13 +223,18 @@ fun CheckInFormScreen(
                     Spacer(Modifier.height(14.dp))
 
                     CustomTextField(
-                        label = "Reason for visit",
+                        label = "Reason for visit *",
                         placeholder = "What brings you in today?",
                         value = state.reasonForVisit,
                         onValueChange = { v ->
                             viewModel.update { it.copy(reasonForVisit = v) }
                         },
                         singleLine = false,
+                        errorText = if (state.showMissing && state.reasonForVisit.isBlank()) {
+                            "Required — tell us why you're visiting"
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -375,38 +380,56 @@ fun CheckInFormScreen(
                 }
 
                 FormCard(title = "Consent") {
+                    val consentMissing = state.showMissing && !state.consentGiven
+                    val signatureMissing = state.showMissing && !state.hasSignature
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             checked = state.consentGiven,
                             onCheckedChange = { v ->
                                 viewModel.update { it.copy(consentGiven = v) }
                             },
-                            colors = CheckboxDefaults.colors(checkedColor = AppColors.BrandBlue),
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = AppColors.BrandBlue,
+                                uncheckedColor = if (consentMissing) AppColors.RequiredRed else AppColors.BorderColor,
+                            ),
                         )
                         Text(
-                            text = "I confirm the information above is accurate.",
+                            text = "I confirm the information above is accurate. *",
                             style = MaterialTheme.typography.bodySmall,
-                            color = AppColors.BlackText,
+                            color = if (consentMissing) AppColors.RequiredRed else AppColors.BlackText,
                         )
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "Signature",
+                        text = if (signatureMissing) "Signature * — please sign below" else "Signature *",
                         style = MaterialTheme.typography.bodySmall,
-                        color = AppColors.BlackText,
+                        color = if (signatureMissing) AppColors.RequiredRed else AppColors.BlackText,
                     )
                     Spacer(Modifier.height(8.dp))
-                    SignaturePad(onSignatureChange = viewModel::setSignature)
+                    SignaturePad(
+                        onSignatureChange = viewModel::setSignature,
+                        isError = signatureMissing,
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
             }
 
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                if (!state.canSubmit) {
+                    Text(
+                        text = "Still needed: " + state.missingForPreview.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.showMissing) AppColors.RequiredRed else AppColors.SecondaryText,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                // Always tappable: if something is missing, Preview says what instead of
+                // silently ignoring the tap.
                 CustomButton(
                     title = "Preview",
                     onClick = viewModel::preview,
-                    enabled = state.canSubmit,
+                    enabled = !state.isGeneratingSummary,
                     isLoading = state.isGeneratingSummary,
                     height = 46.dp,
                 )

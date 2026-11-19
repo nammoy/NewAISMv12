@@ -8,8 +8,6 @@ import com.app.aisheildme.namtran.data.remote.ErrorMappingInterceptor
 import com.app.aisheildme.namtran.data.remote.SafeConverterFactory
 import com.app.aisheildme.namtran.data.remote.UnauthorizedInterceptor
 import com.app.aisheildme.namtran.data.remote.api.AuthApi
-import com.app.aisheildme.namtran.data.repository.DeviceTokenProvider
-import com.app.aisheildme.namtran.data.FirebaseDeviceTokenProvider
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Binds
 import dagger.Module
@@ -45,8 +43,7 @@ object NetworkModule {
     @Singleton
     fun provideSessionStore(
         @ApplicationContext context: Context,
-        json: Json,
-    ): SessionStore = SessionStore(context, json)
+    ): SessionStore = SessionStore(context)
 
     @Provides
     @Singleton
@@ -84,15 +81,4 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideAuthApi(retrofit: Retrofit): AuthApi = retrofit.create(AuthApi::class.java)
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class BindsModule {
-
-    @Binds
-    @Singleton
-    abstract fun bindDeviceTokenProvider(
-        impl: FirebaseDeviceTokenProvider,
-    ): DeviceTokenProvider
 }

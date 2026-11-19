@@ -42,6 +42,7 @@ fun SignaturePad(
     onSignatureChange: (ByteArray?) -> Unit,
     modifier: Modifier = Modifier,
     height: androidx.compose.ui.unit.Dp = 160.dp,
+    isError: Boolean = false,
 ) {
     val strokes = remember { mutableStateListOf<List<Offset>>() }
     var current by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -67,7 +68,11 @@ fun SignaturePad(
                 .height(height)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color.White)
-                .border(1.dp, AppColors.LightBorder, RoundedCornerShape(12.dp)),
+                .border(
+                    width = if (isError) 2.dp else 1.dp,
+                    color = if (isError) AppColors.RequiredRed else AppColors.LightBorder,
+                    shape = RoundedCornerShape(12.dp),
+                ),
         ) {
             Canvas(
                 modifier = Modifier

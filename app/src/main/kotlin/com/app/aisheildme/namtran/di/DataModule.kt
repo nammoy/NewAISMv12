@@ -1,9 +1,5 @@
 package com.app.aisheildme.namtran.di
 
-import android.content.Context
-import androidx.room.Room
-import com.app.aisheildme.namtran.data.local.db.AppDatabase
-import com.app.aisheildme.namtran.data.local.db.CheckInHistoryDao
 import com.app.aisheildme.namtran.data.remote.api.DocumentApi
 import com.app.aisheildme.namtran.data.remote.api.MiscApi
 import com.app.aisheildme.namtran.data.remote.api.NotificationApi
@@ -13,7 +9,6 @@ import com.app.aisheildme.namtran.data.remote.api.RecordApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
 import javax.inject.Singleton
@@ -51,14 +46,4 @@ object DataModule {
     @Singleton
     fun providePatientProfileApi(retrofit: Retrofit): PatientProfileApi =
         retrofit.create(PatientProfileApi::class.java)
-
-    @Provides
-    @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            .build()
-
-    @Provides
-    @Singleton
-    fun provideCheckInHistoryDao(db: AppDatabase): CheckInHistoryDao = db.checkInHistoryDao()
 }

@@ -3,7 +3,6 @@ package com.app.aisheildme.namtran.feature.auth.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.app.aisheildme.namtran.core.common.AppException
-import com.app.aisheildme.namtran.core.common.emailFromData
 import com.app.aisheildme.namtran.core.common.UiMessage
 import com.app.aisheildme.namtran.core.util.Validators
 import com.app.aisheildme.namtran.data.repository.AuthRepository
@@ -81,26 +80,12 @@ class LoginViewModel @Inject constructor(
             try {
                 authRepository.setRememberedEmail(if (state.rememberMe) email else null)
                 val user = authRepository.login(email, state.password)
-                if (!user.isEmailVerified) sendOtpQuietly(email)
                 _events.tryEmit(LoginEvent.Authenticated(user, email))
             } catch (e: AppException) {
-                if (e.code == AppException.EMAIL_NOT_VERIFIED) {
-                    val target = e.emailFromData() ?: email
-                    sendOtpQuietly(target)
-                    _events.tryEmit(LoginEvent.VerifyOtp(target, VerifyFlow.Signup))
-                } else {
-                    _uiState.update { it.copy(message = UiMessage.error(e.message)) }
-                }
+                _uiState.update { it.copy(password = "", message = UiMessage.error(e.message)) }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }
-        }
-    }
-
-    private suspend fun sendOtpQuietly(email: String) {
-        try {
-            authRepository.sendOtp(email)
-        } catch (_: AppException) {
         }
     }
 
@@ -123,9 +108,18 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                val message = authRepository.sendOtp(email)
-                _uiState.update { it.copy(message = UiMessage.success(message)) }
-                _events.tryEmit(LoginEvent.VerifyOtp(email, VerifyFlow.Reset))
+                if (authRepository.canRecoverWithPin(email)) {
+                    _events.tryEmit(LoginEvent.VerifyOtp(email, VerifyFlow.Reset))
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            message = UiMessage.error(
+                                "This email has no vault PIN on this device, so the password " +
+                                    "can't be recovered here.",
+                            ),
+                        )
+                    }
+                }
             } catch (e: AppException) {
                 _uiState.update { it.copy(message = UiMessage.error(e.message)) }
             } finally {

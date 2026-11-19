@@ -372,13 +372,13 @@ class CheckInFormViewModel @Inject constructor(
         if (s.isGeneratingSummary) return
 
         val error = when {
-            s.reasonForVisit.isBlank() -> "Please complete the highlighted fields."
-            !s.consentGiven -> "Please confirm the consent statement."
-            !s.hasSignature -> "Please sign before continuing."
+            s.reasonForVisit.isBlank() -> "Please enter the reason for your visit (Visit section)."
+            !s.consentGiven -> "Please tick the consent box at the bottom of the form."
+            !s.hasSignature -> "Please sign in the signature box before continuing."
             else -> null
         }
         if (error != null) {
-            _uiState.update { it.copy(message = UiMessage.error(error)) }
+            _uiState.update { it.copy(message = UiMessage.error(error), showMissing = true) }
             return
         }
 

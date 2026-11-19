@@ -7,12 +7,8 @@ import androidx.navigation.toRoute
 import com.app.aisheildme.namtran.core.common.AppException
 import com.app.aisheildme.namtran.core.common.UiMessage
 import com.app.aisheildme.namtran.data.repository.AuthRepository
-import com.app.aisheildme.namtran.domain.model.User
 import com.app.aisheildme.namtran.navigation.VerifyEmailRoute
-import com.app.aisheildme.namtran.navigation.VerifyFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,29 +18,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Offline password recovery: with no server to email a code, the user proves who they are
+ * with the vault PIN they set on this device.
+ */
 data class VerifyEmailUiState(
     val email: String = "",
-    val flow: VerifyFlow = VerifyFlow.Signup,
-    val otp: String = "",
-    val secondsRemaining: Int = RESEND_SECONDS,
+    val pin: String = "",
     val isLoading: Boolean = false,
     val message: UiMessage? = null,
 ) {
-    val isValid: Boolean get() = otp.length >= OTP_LENGTH
-    val canResend: Boolean get() = secondsRemaining == 0
-
-    val formattedTime: String
-        get() = "%02d:%02d".format(secondsRemaining / 60, secondsRemaining % 60)
+    val isValid: Boolean get() = pin.length == PIN_LENGTH
 
     companion object {
-        const val RESEND_SECONDS = 105
-        const val OTP_LENGTH = 6
+        const val PIN_LENGTH = 4
     }
 }
 
 sealed interface VerifyEmailEvent {
-    data class Verified(val user: User) : VerifyEmailEvent
-
     data class ResetToken(val token: String) : VerifyEmailEvent
 }
 
@@ -56,82 +47,31 @@ class VerifyEmailViewModel @Inject constructor(
 
     private val args: VerifyEmailRoute = savedStateHandle.toRoute()
 
-    private val _uiState = MutableStateFlow(
-        VerifyEmailUiState(email = args.email, flow = args.flow),
-    )
+    private val _uiState = MutableStateFlow(VerifyEmailUiState(email = args.email))
     val uiState: StateFlow<VerifyEmailUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<VerifyEmailEvent>(extraBufferCapacity = 1)
     val events = _events.asSharedFlow()
 
-    private var timerJob: Job? = null
-
-    init {
-        startTimer()
-    }
-
-    private fun startTimer() {
-        timerJob?.cancel()
-        _uiState.update { it.copy(secondsRemaining = VerifyEmailUiState.RESEND_SECONDS) }
-        timerJob = viewModelScope.launch {
-            while (_uiState.value.secondsRemaining > 0) {
-                delay(1_000)
-                _uiState.update { it.copy(secondsRemaining = it.secondsRemaining - 1) }
-            }
-        }
-    }
-
-    fun onOtpChange(value: String) = _uiState.update { it.copy(otp = value) }
+    fun onPinChange(value: String) = _uiState.update { it.copy(pin = value) }
 
     fun onMessageShown() = _uiState.update { it.copy(message = null) }
-
-    private var resending = false
-
-    fun onResend() {
-        val s = _uiState.value
-        if (!s.canResend || s.isLoading || resending) return
-        resending = true
-        viewModelScope.launch {
-            try {
-                val message = authRepository.sendOtp(s.email)
-                _uiState.update { it.copy(message = UiMessage.success(message)) }
-                startTimer()
-            } catch (e: AppException) {
-                _uiState.update { it.copy(message = UiMessage.error(e.message)) }
-            } finally {
-                resending = false
-            }
-        }
-    }
 
     fun onContinue() {
         val s = _uiState.value
         if (s.isLoading) return
-
-        val otp = s.otp.trim()
-        if (otp.length < VerifyEmailUiState.OTP_LENGTH) {
-            _uiState.update {
-                it.copy(message = UiMessage.error("Please enter the 6-digit code."))
-            }
+        if (!s.isValid) {
+            _uiState.update { it.copy(message = UiMessage.error("Please enter your 4-digit vault PIN.")) }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                when (s.flow) {
-                    VerifyFlow.Reset -> {
-                        val token = authRepository.verifyOtpForgot(s.email, otp)
-                        _events.tryEmit(VerifyEmailEvent.ResetToken(token))
-                    }
-
-                    VerifyFlow.Signup -> {
-                        val user = authRepository.verifyOtpRegister(s.email, otp)
-                        _events.tryEmit(VerifyEmailEvent.Verified(user))
-                    }
-                }
+                val token = authRepository.verifyPinForReset(s.email, s.pin)
+                _events.tryEmit(VerifyEmailEvent.ResetToken(token))
             } catch (e: AppException) {
-                _uiState.update { it.copy(message = UiMessage.error(e.message)) }
+                _uiState.update { it.copy(pin = "", message = UiMessage.error(e.message)) }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }

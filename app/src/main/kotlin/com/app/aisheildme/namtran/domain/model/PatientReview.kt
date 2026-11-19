@@ -1,5 +1,8 @@
 package com.app.aisheildme.namtran.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class FindingSeverity {
     Critical,
     Warning,
@@ -14,6 +17,7 @@ enum class FindingSeverity {
     }
 }
 
+@Serializable
 data class ReviewPatient(
     val id: Int? = null,
     val patientCode: String? = null,
@@ -26,6 +30,7 @@ data class ReviewPatient(
     val primaryDoctor: String? = null,
 )
 
+@Serializable
 data class ReviewVitals(
     val bloodPressure: String? = null,
     val heartRate: String? = null,
@@ -34,12 +39,14 @@ data class ReviewVitals(
     val bmi: String? = null,
 )
 
+@Serializable
 data class ReviewFinding(
     val severity: FindingSeverity = FindingSeverity.Info,
     val code: String? = null,
     val message: String? = null,
 )
 
+@Serializable
 data class ReviewSummary(
     val total: Int = 0,
     val critical: Int = 0,
@@ -48,6 +55,7 @@ data class ReviewSummary(
     val hasBlock: Boolean = false,
 )
 
+@Serializable
 data class ReviewAiAgent(
     val summary: String? = null,
     val recommendation: String? = null,
@@ -58,6 +66,7 @@ data class ReviewAiAgent(
         get() = confidence?.let { "${(it * 100).toInt()}%" }
 }
 
+@Serializable
 data class PatientReview(
     val patient: ReviewPatient = ReviewPatient(),
     val vitalSigns: ReviewVitals? = null,

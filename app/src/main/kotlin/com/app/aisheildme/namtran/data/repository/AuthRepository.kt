@@ -1,63 +1,74 @@
 package com.app.aisheildme.namtran.data.repository
 
+import android.content.Context
+import android.net.Uri
 import com.app.aisheildme.namtran.core.common.AppException
 import com.app.aisheildme.namtran.data.local.SessionStore
 import com.app.aisheildme.namtran.data.local.VaultLock
-import com.app.aisheildme.namtran.data.remote.api.AuthApi
-import com.app.aisheildme.namtran.data.remote.dto.ApiResponse
-import com.app.aisheildme.namtran.data.remote.dto.ChangePasswordRequest
-import com.app.aisheildme.namtran.data.remote.dto.LoginRequest
-import com.app.aisheildme.namtran.data.remote.dto.RegisterRequest
-import com.app.aisheildme.namtran.data.remote.dto.ResetPinRequest
-import com.app.aisheildme.namtran.data.remote.dto.SendOtpRequest
-import com.app.aisheildme.namtran.data.remote.dto.SetPasswordRequest
-import com.app.aisheildme.namtran.data.remote.dto.SetPinRequest
-import com.app.aisheildme.namtran.data.remote.dto.UpdateProfileRequest
-import com.app.aisheildme.namtran.data.remote.dto.UserDto
-import com.app.aisheildme.namtran.data.remote.dto.VerifyOtpRequest
-import com.app.aisheildme.namtran.data.remote.dto.VerifyPinRequest
-import com.app.aisheildme.namtran.data.remote.dto.toDomain
 import com.app.aisheildme.namtran.domain.model.DriverLicense
 import com.app.aisheildme.namtran.domain.model.EmergencyContact
 import com.app.aisheildme.namtran.domain.model.FamilyDoctor
 import com.app.aisheildme.namtran.domain.model.InsuranceInfo
 import com.app.aisheildme.namtran.domain.model.PatientMedicalDetail
 import com.app.aisheildme.namtran.domain.model.User
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import com.app.aisheildme.namtran.negotiator.Negotiator
+import com.app.aisheildme.namtran.negotiator.Purpose
+import com.app.aisheildme.namtran.negotiator.Requester
+import com.app.aisheildme.namtran.vault.AccountHasPin
+import com.app.aisheildme.namtran.vault.Authenticate
+import com.app.aisheildme.namtran.vault.ChangePassword
+import com.app.aisheildme.namtran.vault.ChangePin
+import com.app.aisheildme.namtran.vault.CreateAccount
+import com.app.aisheildme.namtran.vault.DeleteAccount
+import com.app.aisheildme.namtran.vault.GetProfile
+import com.app.aisheildme.namtran.vault.ObserveProfile
+import com.app.aisheildme.namtran.vault.ResetPassword
+import com.app.aisheildme.namtran.vault.SaveProfile
+import com.app.aisheildme.namtran.vault.SetPin
+import com.app.aisheildme.namtran.vault.VerifyPin
+import com.app.aisheildme.namtran.vault.VerifyPinForReset
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Local, offline accounts. Credentials are checked inside the vault (only salted hashes are
+ * stored); every call goes through the [Negotiator].
+ */
 @Singleton
 class AuthRepository @Inject constructor(
-    private val api: AuthApi,
+    private val negotiator: Negotiator,
     private val sessionStore: SessionStore,
     private val vaultLock: VaultLock,
-    private val deviceTokenProvider: DeviceTokenProvider,
-    private val documentApi: com.app.aisheildme.namtran.data.remote.api.DocumentApi,
-    @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
+    @param:ApplicationContext private val context: Context,
 ) {
 
-    val user: Flow<User?> = sessionStore.user
+    val user: Flow<User?> = negotiator.observe(Requester.Profile, Purpose.OwnerView, ObserveProfile)
 
-    suspend fun currentUser(): User? = sessionStore.currentUser()
+    @Volatile
+    private var legacyPurged = false
 
-    suspend fun login(email: String, password: String): User {
-        val response = api.login(
-            LoginRequest(
-                email = email,
-                password = password,
-                deviceToken = deviceTokenProvider.token(),
-            ),
-        )
-        return response.requireUser().also { persist(it) }
+    suspend fun currentUser(): User? {
+        if (!legacyPurged) {
+            sessionStore.purgeLegacyData()
+            legacyPurged = true
+        }
+        if (sessionStore.currentAccountId() == null) return null
+        return try {
+            negotiator.request(Requester.Profile, Purpose.OwnerView, GetProfile)
+        } catch (e: AppException) {
+            null
+        }
     }
 
+    suspend fun login(email: String, password: String): User =
+        negotiator.request(Requester.Auth, Purpose.Authenticate, Authenticate(email, password))
+
+    /** Creates the account on this device and signs in. */
     suspend fun register(
         firstName: String,
         lastName: String,
@@ -66,94 +77,81 @@ class AuthRepository @Inject constructor(
         confirmPassword: String,
         profile: RegisterProfile? = null,
     ): String {
-        val response = api.register(
-            RegisterRequest(
-                firstname = firstName,
-                lastname = lastName,
-                email = email,
-                password = password,
-                confirmPassword = confirmPassword,
-                deviceToken = deviceTokenProvider.token(),
-                dob = profile?.dob,
-                gender = profile?.gender?.lowercase(),
-                mobileNo = profile?.mobileNo,
-                address = profile?.address,
-                city = profile?.city,
-                state = profile?.state,
-                zipcode = profile?.zipcode,
-            ),
+        if (password != confirmPassword) throw AppException("Passwords do not match")
+        val draft = User(
+            firstname = firstName.trim(),
+            lastname = lastName.trim(),
+            email = email.trim(),
+            dob = profile?.dob,
+            gender = profile?.gender,
+            mobileNo = profile?.mobileNo,
+            address = profile?.address,
+            city = profile?.city,
+            state = profile?.state,
+            zipcode = profile?.zipcode,
         )
-        return response.message
+        negotiator.request(Requester.Auth, Purpose.Authenticate, CreateAccount(email, password, draft))
+        return "Your account was created on this device."
     }
 
-    suspend fun verifyOtpRegister(email: String, otp: String): User {
-        val response = api.verifyOtpRegister(
-            VerifyOtpRequest(
-                email = email,
-                otp = otp,
-                deviceToken = deviceTokenProvider.token(),
-                deviceType = "android",
-            ),
-        )
-        return response.requireUser().also { persist(it) }
-    }
+    /** Whether this email can recover its password with the vault PIN. */
+    suspend fun canRecoverWithPin(email: String): Boolean =
+        negotiator.request(Requester.Auth, Purpose.Authenticate, AccountHasPin(email))
 
-    suspend fun sendOtp(email: String): String = api.sendOtp(SendOtpRequest(email)).message
-
-    suspend fun verifyOtpForgot(email: String, otp: String): String {
-        val response = api.verifyOtpForgot(VerifyOtpRequest(email = email, otp = otp))
-        return response.data?.apiToken
-            ?: throw AppException(response.message.ifEmpty { AppException.GENERIC })
+    /**
+     * Step 1 of offline password recovery. Returns the token for step 2
+     * ([setNewPassword]); the Negotiator only honours it for the next 10 minutes.
+     */
+    suspend fun verifyPinForReset(email: String, pin: String): String {
+        negotiator.request(Requester.Auth, Purpose.Authenticate, VerifyPinForReset(email, pin))
+        return email.trim()
     }
 
     suspend fun setNewPassword(
         token: String,
         newPassword: String,
         confirmPassword: String,
-    ): String = api.setNewPassword(
-        token = token,
-        body = SetPasswordRequest(newPassword, confirmPassword),
-    ).message
+    ): String {
+        if (newPassword != confirmPassword) throw AppException("Passwords do not match")
+        negotiator.request(Requester.Auth, Purpose.Authenticate, ResetPassword(token, newPassword))
+        return "Your password was reset. Please sign in."
+    }
 
     suspend fun changePassword(
         currentPassword: String,
         newPassword: String,
         confirmPassword: String,
     ): String {
-        val response = api.changePassword(
-            ChangePasswordRequest(currentPassword, newPassword, confirmPassword),
-        )
-        sessionStore.clear()
-        vaultLock.lock()
-        return response.message
+        if (newPassword != confirmPassword) throw AppException("Passwords do not match")
+        negotiator.request(Requester.Auth, Purpose.OwnerEdit, ChangePassword(currentPassword, newPassword))
+        negotiator.signOut()
+        return "Password changed. Please sign in again."
     }
 
     suspend fun setPin(pin: String, confirmPin: String): String {
-        val response = api.setPin(SetPinRequest(pin, confirmPin))
-        sessionStore.currentUser()?.let { sessionStore.setUser(it.copy(isPinSet = true)) }
-        return response.message
+        if (pin != confirmPin) throw AppException("PINs do not match")
+        negotiator.request(Requester.Auth, Purpose.OwnerEdit, SetPin(pin))
+        return "Vault PIN saved."
     }
 
     suspend fun resetPin(oldPin: String, pin: String, confirmPin: String): String {
-        val response = api.resetPin(ResetPinRequest(oldPin, pin, confirmPin))
-        sessionStore.currentUser()?.let { sessionStore.setUser(it.copy(isPinSet = true)) }
-        return response.message
+        if (pin != confirmPin) throw AppException("PINs do not match")
+        negotiator.request(Requester.Auth, Purpose.OwnerEdit, ChangePin(oldPin, pin))
+        return "Vault PIN changed."
     }
 
     suspend fun verifyPin(pin: String): String {
-        val message = api.verifyPin(VerifyPinRequest(pin)).message
+        negotiator.request(Requester.Auth, Purpose.OwnerView, VerifyPin(pin))
         vaultLock.markUnlocked()
-        return message
+        return "Vault unlocked."
     }
 
     fun isVaultUnlocked(pinExpiryMinutes: Int): Boolean = vaultLock.isUnlocked(pinExpiryMinutes)
 
     fun markVaultUnlocked() = vaultLock.markUnlocked()
 
-    suspend fun refreshProfile(): User {
-        val fetched = api.getProfile().requireUser()
-        return mergeProfile(fetched).also { persist(it, storeTokenOnlyIfPresent = true) }
-    }
+    /** Kept for callers that used to re-fetch from the server; the vault is the source of truth. */
+    suspend fun refreshProfile(): User = currentUser() ?: throw AppException("Please sign in first.")
 
     suspend fun updateProfile(
         firstName: String? = null,
@@ -163,19 +161,17 @@ class AuthRepository @Inject constructor(
         isEnableFaceId: Boolean? = null,
         isEnableBiometric: Boolean? = null,
         pushNotification: Boolean? = null,
-    ): User {
-        val updated = api.updateProfile(
-            UpdateProfileRequest(
-                firstname = firstName,
-                lastname = lastName,
-                imageUrl = imageUrl,
-                pinExpiryTime = pinExpiryTime,
-                isEnableFaceId = isEnableFaceId,
-                isEnableBiometric = isEnableBiometric,
-                pushNotification = pushNotification,
-            ),
-        ).requireUser()
-        return mergeProfile(updated).also { persist(it, storeTokenOnlyIfPresent = true) }
+    ): User = editProfile { user ->
+        user.copy(
+            firstname = firstName?.trim() ?: user.firstname,
+            lastname = lastName?.trim() ?: user.lastname,
+            name = null,
+            imageUrl = imageUrl ?: user.imageUrl,
+            pinExpiryTime = pinExpiryTime ?: user.pinExpiryTime,
+            isEnableFaceId = isEnableFaceId ?: user.isEnableFaceId,
+            isEnableBiometric = isEnableBiometric ?: user.isEnableBiometric,
+            pushNotification = pushNotification ?: user.pushNotification,
+        )
     }
 
     suspend fun saveProfileSetup(
@@ -186,125 +182,71 @@ class AuthRepository @Inject constructor(
         medicalDetail: PatientMedicalDetail? = null,
         bloodGroup: String? = null,
     ): User? {
-        val body = buildJsonObject {
-            insurance?.takeUnless { it.isEmpty }?.let {
-                it.provider?.let { v -> put("insurance_provider", v) }
-                it.policyNumber?.let { v -> put("insurance_policy_number", v) }
-                it.groupNumber?.let { v -> put("insurance_group_number", v) }
-            }
-            familyDoctor?.takeUnless { it.isEmpty }?.let {
-                it.name?.let { v -> put("family_doctor_name", v) }
-                it.phone?.let { v -> put("family_doctor_phone", v) }
-                it.address?.let { v -> put("family_doctor_address", v) }
-            }
-            driverLicense?.takeUnless { it.isEmpty }?.let {
-                it.number?.let { v -> put("driver_license_number", v) }
-                it.state?.let { v -> put("driver_license_state", v) }
-                it.expiry?.let { v -> put("driver_license_expiry", v) }
-            }
-            bloodGroup?.trim()?.takeIf { it.isNotEmpty() }?.let { put("blood_group", it) }
+        val nothingToSave = listOfNotNull(
+            emergencyContact?.takeUnless { it.isEmpty },
+            insurance?.takeUnless { it.isEmpty },
+            familyDoctor?.takeUnless { it.isEmpty },
+            driverLicense?.takeUnless { it.isEmpty },
+            medicalDetail?.takeUnless { it.isEmpty },
+            bloodGroup?.takeIf { it.isNotBlank() },
+        ).isEmpty()
+        if (nothingToSave) return null
 
-            emergencyContact?.takeUnless { it.isEmpty }?.let { contact ->
-                put(
-                    "emergency_contacts",
-                    buildJsonArray {
-                        add(
-                            buildJsonObject {
-                                put("firstname", contact.firstname)
-                                put("lastname", contact.lastname)
-                                contact.relation?.let { put("relation", it) }
-                                contact.phone?.let { put("phone", it) }
-                                contact.email?.let { put("email", it) }
-                                contact.city?.let { put("city", it) }
-                                contact.address?.let { put("address", it) }
-                            },
-                        )
-                    },
-                )
-            }
-
-            medicalDetail?.takeUnless { it.isEmpty }?.let { detail ->
-                put(
-                    "patient_medical_detail",
-                    buildJsonObject {
-                        detail.medicalConditionAndDiagnoses
-                            ?.let { put("medical_condition_and_diagnoses", it) }
-                        detail.allergiesAndSensitivities
-                            ?.let { put("allergies_and_sensitivities", it) }
-                        detail.currentMedications?.let { put("current_medications", it) }
-                        detail.dailyCareNeeds?.let { put("daily_care_needs", it) }
-                        detail.specialInstructions?.let { put("special_instructions", it) }
-                    },
-                )
-            }
+        return editProfile { user ->
+            user.copy(
+                emergencyContacts = emergencyContact?.takeUnless { it.isEmpty }
+                    ?.let { listOf(it) + user.emergencyContacts.drop(1) }
+                    ?: user.emergencyContacts,
+                insurance = insurance?.takeUnless { it.isEmpty } ?: user.insurance,
+                familyDoctor = familyDoctor?.takeUnless { it.isEmpty } ?: user.familyDoctor,
+                driverLicense = driverLicense?.takeUnless { it.isEmpty } ?: user.driverLicense,
+                patientMedicalDetail = medicalDetail?.takeUnless { it.isEmpty } ?: user.patientMedicalDetail,
+                bloodGroup = bloodGroup?.trim()?.takeIf { it.isNotEmpty() } ?: user.bloodGroup,
+            )
         }
-
-        if (body.isEmpty()) return null
-
-        val updated = api.patchProfile(body).requireUser()
-        return mergeProfile(updated).also { persist(it, storeTokenOnlyIfPresent = true) }
     }
 
-    suspend fun logout(callApi: Boolean = true) {
-        if (callApi) {
-            runCatching { api.logout() }
-        }
-        sessionStore.clear()
-        vaultLock.lock()
-    }
+    suspend fun logout(callApi: Boolean = true) = negotiator.signOut()
 
+    /** Permanently removes this account and everything it owns from the device. */
     suspend fun deleteAccount() {
-        api.deleteAccount()
-        sessionStore.clear()
-        vaultLock.lock()
+        val accountId = sessionStore.currentAccountId()
+        negotiator.request(Requester.Profile, Purpose.OwnerEdit, DeleteAccount)
+        accountId?.let { avatarDir(it).deleteRecursively() }
     }
 
     suspend fun setBiometricEnabled(enabled: Boolean) = sessionStore.setBiometricEnabled(enabled)
 
-    suspend fun uploadAvatar(uri: android.net.Uri, fileName: String): String {
+    /** Copies the chosen photo into app-private storage and returns its local URI. */
+    suspend fun uploadAvatar(uri: Uri, fileName: String): String = withContext(Dispatchers.IO) {
+        val accountId = sessionStore.currentAccountId() ?: throw AppException("Please sign in first.")
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw AppException("Could not read the selected image.")
+        if (bytes.size > MAX_AVATAR_BYTES) throw AppException("That image is too large (max 10 MB).")
 
-        val mediaType = "image/*".toMediaTypeOrNull()
-        val part = MultipartBody.Part.createFormData(
-            "file",
-            fileName,
-            bytes.toRequestBody(mediaType),
-        )
-        val response = documentApi.uploadAttachment(
-            path = "user".toRequestBody("text/plain".toMediaTypeOrNull()),
-            file = part,
-        )
-        return response.data?.firstOrNull()
-            ?: throw AppException(response.message.ifEmpty { AppException.GENERIC })
+        val dir = avatarDir(accountId).apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val extension = fileName.substringAfterLast('.', "jpg").take(5)
+        val file = File(dir, "avatar_${System.currentTimeMillis()}.$extension")
+        file.writeBytes(bytes)
+        Uri.fromFile(file).toString()
     }
 
     suspend fun rememberedEmail(): String? = sessionStore.rememberedEmail()
 
     suspend fun setRememberedEmail(email: String?) = sessionStore.setRememberedEmail(email)
 
-    private suspend fun persist(user: User, storeTokenOnlyIfPresent: Boolean = false) {
-        sessionStore.setUser(user)
-        if (!storeTokenOnlyIfPresent || user.apiToken.isNotEmpty()) {
-            if (user.apiToken.isNotEmpty()) sessionStore.setApiToken(user.apiToken)
-        }
+    private suspend fun editProfile(transform: (User) -> User): User {
+        val current = negotiator.request(Requester.Profile, Purpose.OwnerView, GetProfile)
+            ?: throw AppException("Please sign in first.")
+        return negotiator.request(Requester.Profile, Purpose.OwnerEdit, SaveProfile(transform(current)))
     }
 
-    private suspend fun mergeProfile(updated: User): User {
-        val previous = sessionStore.currentUser() ?: return updated
-        return updated.copy(
-            apiToken = updated.apiToken.ifEmpty { previous.apiToken },
-            isPinSet = updated.isPinSet || previous.isPinSet,
-            isEmailVerified = updated.isEmailVerified || previous.isEmailVerified,
-        )
+    private fun avatarDir(accountId: Int) = File(context.filesDir, "avatars/$accountId")
+
+    private companion object {
+        const val MAX_AVATAR_BYTES = 10 * 1024 * 1024
     }
-
-    private fun ApiResponse<UserDto>.requireUser(): User =
-        data?.toDomain() ?: throw AppException(message.ifEmpty { AppException.GENERIC }, code)
-}
-
-interface DeviceTokenProvider {
-    suspend fun token(): String
 }
 
 data class RegisterProfile(

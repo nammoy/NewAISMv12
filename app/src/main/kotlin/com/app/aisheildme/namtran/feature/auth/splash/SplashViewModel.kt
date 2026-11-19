@@ -35,11 +35,9 @@ class SplashViewModel @Inject constructor(
             delay(SPLASH_DURATION_MS)
 
             val user = authRepository.currentUser()
-            val hasSession = user != null && user.apiToken.isNotEmpty()
 
             val destination = when {
-                !hasSession -> SplashDestination.Onboarding
-                !user.isEmailVerified -> SplashDestination.Login
+                user == null -> SplashDestination.Onboarding
                 !user.isPinSet -> SplashDestination.CreateVaultPin
                 else -> SplashDestination.Dashboard
             }

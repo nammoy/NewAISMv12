@@ -1,5 +1,8 @@
 package com.app.aisheildme.namtran.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class PatientPrefill(
     val patientCode: String? = null,
     val demographics: PrefillDemographics = PrefillDemographics(),
@@ -17,6 +20,7 @@ data class PatientPrefill(
     }
 }
 
+@Serializable
 data class PrefillDemographics(
     val firstName: String? = null,
     val lastName: String? = null,
@@ -45,6 +49,7 @@ data class PrefillDemographics(
             .takeIf { it.isNotBlank() }
 }
 
+@Serializable
 data class PrefillVitals(
     val bloodPressure: String? = null,
     val heartRate: String? = null,
@@ -53,6 +58,7 @@ data class PrefillVitals(
     val bmi: String? = null,
 )
 
+@Serializable
 data class PrefillInsurance(
     val company: String? = null,
     val memberId: String? = null,
@@ -60,12 +66,14 @@ data class PrefillInsurance(
     val primaryCarePhysician: String? = null,
 )
 
+@Serializable
 data class PrefillContact(
     val name: String? = null,
     val relation: String? = null,
     val phone: String? = null,
 )
 
+@Serializable
 data class PrefillSymptom(
     val name: String? = null,
     val painLevel: Int = 0,

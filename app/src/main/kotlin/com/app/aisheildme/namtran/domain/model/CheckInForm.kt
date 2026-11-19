@@ -1,7 +1,10 @@
 package com.app.aisheildme.namtran.domain.model
 
+import kotlinx.serialization.Serializable
+
 import kotlin.math.roundToInt
 
+@Serializable
 data class MedicationEntry(
     val name: String = "",
     val dose: String = "",
@@ -11,6 +14,7 @@ data class MedicationEntry(
         get() = name.isBlank() && dose.isBlank() && frequency.isBlank()
 }
 
+@Serializable
 data class LabResult(
     val testName: String = "",
     val resultValue: String = "",

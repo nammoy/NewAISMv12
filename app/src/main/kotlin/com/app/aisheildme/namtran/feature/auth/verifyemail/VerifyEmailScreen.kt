@@ -1,6 +1,5 @@
 package com.app.aisheildme.namtran.feature.auth.verifyemail
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +23,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,11 +34,9 @@ import com.app.aisheildme.namtran.core.designsystem.component.AuthHeader
 import com.app.aisheildme.namtran.core.designsystem.component.CustomButton
 import com.app.aisheildme.namtran.core.designsystem.component.MessageEffect
 import com.app.aisheildme.namtran.core.designsystem.component.PinInput
-import com.app.aisheildme.namtran.domain.model.User
 
 @Composable
 fun VerifyEmailScreen(
-    onVerified: (User) -> Unit,
     onResetToken: (String) -> Unit,
     viewModel: VerifyEmailViewModel = hiltViewModel(),
 ) {
@@ -50,7 +46,6 @@ fun VerifyEmailScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is VerifyEmailEvent.Verified -> onVerified(event.user)
                 is VerifyEmailEvent.ResetToken -> onResetToken(event.token)
             }
         }
@@ -81,15 +76,15 @@ fun VerifyEmailScreen(
             ) {
                 AuthHeader(
                     titleTop = "VERIFY",
-                    titleBottom = "EMAIL",
-                    subtitle = "We sent a 6-digit code to ${state.email}.",
+                    titleBottom = "IT'S YOU",
+                    subtitle = "Enter the 4-digit vault PIN you set on this device for ${state.email}.",
                 )
                 Spacer(Modifier.height(32.dp))
 
                 PinInput(
-                    value = state.otp,
-                    onValueChange = viewModel::onOtpChange,
-                    length = 6,
+                    value = state.pin,
+                    onValueChange = viewModel::onPinChange,
+                    length = VerifyEmailUiState.PIN_LENGTH,
                     onFilled = { viewModel.onContinue() },
                 )
                 Spacer(Modifier.height(24.dp))
@@ -99,26 +94,11 @@ fun VerifyEmailScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.canResend) {
-                        Text(
-                            text = "Didn't get a code?",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AppColors.BlackText,
-                        )
-                        Text(
-                            text = " Resend",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AppColors.BrandBlue,
-                            modifier = Modifier.clickable(onClick = viewModel::onResend),
-                        )
-                    } else {
-                        Text(
-                            text = "Resend code in ${state.formattedTime}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AppColors.TextHint,
-                        )
-                    }
+                    Text(
+                        text = "Your data never leaves this phone, so no code is emailed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppColors.TextHint,
+                    )
                 }
             }
 

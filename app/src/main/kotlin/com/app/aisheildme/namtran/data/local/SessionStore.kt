@@ -6,31 +6,36 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.app.aisheildme.namtran.domain.model.User
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "aishieldme_session")
 
+/**
+ * Small, non-sensitive session state. Profile and health data live only in the encrypted
+ * vault; this store keeps just *which* local account is signed in plus UI preferences.
+ */
 @Singleton
 class SessionStore @Inject constructor(
     private val context: Context,
-    private val json: Json,
 ) {
     private object Keys {
-        val USER = stringPreferencesKey("user")
-        val API_TOKEN = stringPreferencesKey("api_token")
+        val ACCOUNT_ID = intPreferencesKey("account_id")
         val REMEMBERED_EMAIL = stringPreferencesKey("remembered_email")
         val BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
+
+        // Written by the old server-based build: a plaintext profile copy and an API token.
+        val LEGACY_USER = stringPreferencesKey("user")
+        val LEGACY_API_TOKEN = stringPreferencesKey("api_token")
     }
 
     private val preferences: Flow<Preferences> = context.dataStore.data
@@ -38,22 +43,22 @@ class SessionStore @Inject constructor(
             if (e is IOException) emit(emptyPreferences()) else throw e
         }
 
-    val user: Flow<User?> = preferences.map { prefs ->
-        prefs[Keys.USER]?.let { raw ->
-            runCatching { json.decodeFromString<User>(raw) }.getOrNull()
+    val accountId: Flow<Int?> = preferences.map { it[Keys.ACCOUNT_ID] }.distinctUntilChanged()
+
+    suspend fun currentAccountId(): Int? = accountId.first()
+
+    suspend fun setAccountId(id: Int?) {
+        context.dataStore.edit { prefs ->
+            if (id == null) prefs.remove(Keys.ACCOUNT_ID) else prefs[Keys.ACCOUNT_ID] = id
         }
     }
 
-    suspend fun currentUser(): User? = user.first()
-
-    suspend fun apiToken(): String? = preferences.first()[Keys.API_TOKEN]
-
-    suspend fun setUser(user: User) {
-        context.dataStore.edit { it[Keys.USER] = json.encodeToString(user) }
-    }
-
-    suspend fun setApiToken(token: String) {
-        context.dataStore.edit { it[Keys.API_TOKEN] = token }
+    /** Removes the plaintext profile and token the old server-based build left behind. */
+    suspend fun purgeLegacyData() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(Keys.LEGACY_USER)
+            prefs.remove(Keys.LEGACY_API_TOKEN)
+        }
     }
 
     suspend fun rememberedEmail(): String? =
@@ -73,10 +78,9 @@ class SessionStore @Inject constructor(
         context.dataStore.edit { it[Keys.BIOMETRIC_ENABLED] = enabled }
     }
 
-    suspend fun clear() {
-        context.dataStore.edit { prefs ->
-            prefs.remove(Keys.USER)
-            prefs.remove(Keys.API_TOKEN)
-        }
-    }
+    // ---- Temporary: used by the remaining server calls until they move into the vault. ----
+
+    suspend fun apiToken(): String? = null
+
+    suspend fun clear() = purgeLegacyData()
 }

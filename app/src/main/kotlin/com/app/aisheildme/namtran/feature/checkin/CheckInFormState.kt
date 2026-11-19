@@ -73,12 +73,21 @@ data class CheckInFormState(
     val showRawScanText: Boolean = false,
 
     val isGeneratingSummary: Boolean = false,
+    /** Turned on after a Preview tap with missing items, so they're highlighted in red. */
+    val showMissing: Boolean = false,
     val message: UiMessage? = null,
 ) {
     val hasSignature: Boolean get() = signature != null && !signature.isEmpty
 
-    val canSubmit: Boolean
-        get() = reasonForVisit.isNotBlank() && consentGiven && hasSignature
+    /** What still has to be done before Preview, in the order it appears on the form. */
+    val missingForPreview: List<String>
+        get() = buildList {
+            if (reasonForVisit.isBlank()) add("reason for visit")
+            if (!consentGiven) add("consent tick")
+            if (!hasSignature) add("signature")
+        }
+
+    val canSubmit: Boolean get() = missingForPreview.isEmpty()
 
     companion object {
         const val MEDICATION_ROWS = 4

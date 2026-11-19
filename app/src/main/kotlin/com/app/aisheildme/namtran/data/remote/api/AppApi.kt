@@ -151,7 +151,7 @@ interface PatientProfileApi {
     @POST(ApiRoutes.PATIENT_PROFILE_COMPLETE)
     suspend fun completeProfile(@Body body: JsonElement): ApiResponse<JsonElement>
 
-    @GET("${'$'}{ApiRoutes.PATIENT_REVIEW}{code}")
+    @GET(ApiRoutes.PATIENT_REVIEW + "{code}")
     suspend fun getPatientReview(@Path("code") code: String): ApiResponse<PatientReviewDto>
 
     @GET(ApiRoutes.PATIENT_PROFILE)

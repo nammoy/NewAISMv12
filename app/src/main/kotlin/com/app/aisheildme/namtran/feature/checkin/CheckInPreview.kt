@@ -74,22 +74,8 @@ class CheckInPreviewViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
             try {
-                val saved = profileRepository.completeProfile(current)
-                val patientCode = saved?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: current.patientId.trim().takeIf { it.isNotEmpty() && it != "—" }
-
-                if (patientCode == null) {
-                    _uiState.update {
-                        it.copy(
-                            message = UiMessage.error(
-                                "Missing patient code — could not generate report.",
-                            ),
-                        )
-                    }
-                    return@launch
-                }
-
-                val review = profileRepository.getPatientReview(patientCode)
+                // Saved to the vault and reviewed on this phone — nothing is sent anywhere.
+                val review = profileRepository.submitCheckIn(current)
                 handoff.put(DetailHandoff.CHECK_IN_REVIEW, review)
                 _reportReady.tryEmit(Unit)
             } catch (e: AppException) {
