@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AiShieldMe"
+rootProject.name = "NewAISMv12"
 include(":app")

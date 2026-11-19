@@ -1,4 +1,4 @@
-# AI-ShieldMe — Android app
+# NewAISMv12 — AI-ShieldMe Android app
 
 Native Android app (Kotlin + Jetpack Compose). This guide explains how to build
 and run it on your own computer.
