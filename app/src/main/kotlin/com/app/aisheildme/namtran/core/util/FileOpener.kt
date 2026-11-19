@@ -60,6 +60,46 @@ class FileOpener @Inject constructor(
     }
 }
 
+/** Opening and sharing files that are already on this device (no network). */
+object LocalFiles {
+
+    /** Shows [file] in a viewer app. Returns an error message, or null on success. */
+    fun open(context: Context, file: File, mimeType: String?): String? {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uriFor(context, file), mimeType?.takeIf { it.isNotBlank() } ?: "*/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            null
+        } catch (e: android.content.ActivityNotFoundException) {
+            "No app on this phone can open ${file.extension.uppercase()} files."
+        }
+    }
+
+    /** Opens Android's share sheet for [file]; the user picks where it goes. */
+    fun share(context: Context, file: File, mimeType: String?, subject: String): String? {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uriFor(context, file))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return try {
+            context.startActivity(
+                Intent.createChooser(send, "Share \"$subject\"").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            null
+        } catch (e: android.content.ActivityNotFoundException) {
+            "No app on this phone can receive this file."
+        }
+    }
+
+    private fun uriFor(context: Context, file: File) =
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
 object MimeTypes {
     fun forFileName(fileName: String): String =
         when (fileName.substringAfterLast('.', "").lowercase()) {

@@ -5,6 +5,11 @@ import androidx.room.Room
 import com.app.aisheildme.namtran.domain.model.PatientPrefill
 import com.app.aisheildme.namtran.domain.model.PatientReview
 import com.app.aisheildme.namtran.domain.model.SavedCheckInSummary
+import com.app.aisheildme.namtran.domain.model.DocumentCategory
+import com.app.aisheildme.namtran.domain.model.DocumentItem
+import com.app.aisheildme.namtran.domain.model.FolderCategory
+import com.app.aisheildme.namtran.vault.db.DocumentEntity
+import com.app.aisheildme.namtran.vault.db.FolderEntity
 import com.app.aisheildme.namtran.vault.db.PatientProfileEntity
 import com.app.aisheildme.namtran.vault.db.PatientReviewEntity
 import com.app.aisheildme.namtran.domain.model.User
@@ -40,6 +45,7 @@ class Vault @Inject constructor(
 ) {
 
     private val db: VaultDatabase by lazy { open() }
+    private val files = VaultFileStore(context)
 
     private fun open(): VaultDatabase {
         System.loadLibrary("sqlcipher")
@@ -65,7 +71,10 @@ class Vault @Inject constructor(
                 is SetPin -> setPin(requireAccount(accountId), op.pin)
                 is VerifyPin -> verifyPin(requireAccount(accountId), op.pin)
                 is ChangePin -> changePin(requireAccount(accountId), op)
-                DeleteAccount -> accounts().delete(requireAccount(accountId))
+                DeleteAccount -> requireAccount(accountId).let { id ->
+                    accounts().delete(id)
+                    files.deleteAccount(id)
+                }
 
                 is SaveCheckInSummary -> db.checkIns().save(op.summary.toEntity(requireAccount(accountId)))
                 ListCheckInSummaries -> db.checkIns().all(requireAccount(accountId)).map { it.toDomain() }
@@ -79,6 +88,13 @@ class Vault @Inject constructor(
                 is SavePatientReview -> savePatientReview(requireAccount(accountId), op.review)
                 LatestPatientReview -> db.patientReviews().latest(requireAccount(accountId))
                     ?.let { json.decodeFromString(PatientReview.serializer(), it.reviewJson) }
+
+                is ListFolders -> listFolders(requireAccount(accountId), op)
+                is CreateFolder -> createFolder(requireAccount(accountId), op)
+                is ListDocuments -> listDocuments(requireAccount(accountId), op)
+                is StoreDocument -> storeDocument(requireAccount(accountId), op)
+                is DeleteDocument -> deleteDocument(requireAccount(accountId), op.id)
+                is ReadDocument -> readDocument(requireAccount(accountId), op.id)
             }
             result as R
         }
@@ -253,6 +269,136 @@ class Vault @Inject constructor(
         )
     }
 
+    // ---- folders & documents ----
+
+    private suspend fun listFolders(accountId: Int, op: ListFolders): List<DocumentCategory> {
+        seedDefaultFolders(accountId)
+        return db.folders().page(accountId, op.limit, offset(op.page, op.limit)).map { it.toDomain() }
+    }
+
+    /** Every account starts with the standard folders (once — deleted ones aren't re-added). */
+    private suspend fun seedDefaultFolders(accountId: Int) {
+        if (db.folders().countAll(accountId) > 0) return
+        val at = now()
+        db.folders().insertAll(
+            FolderCategory.entries.mapIndexed { index, category ->
+                FolderEntity(
+                    accountId = accountId,
+                    name = category.label,
+                    icon = category.name.lowercase(),
+                    color = category.colorHex,
+                    isDefault = true,
+                    sortOrder = index,
+                    createdAt = at,
+                    updatedAt = at,
+                )
+            },
+        )
+    }
+
+    private suspend fun createFolder(accountId: Int, op: CreateFolder): DocumentCategory {
+        val name = op.folderName.trim()
+        if (name.isEmpty()) throw VaultException("Please give the folder a name.")
+        if (name.length > 60) throw VaultException("Folder names can be up to 60 characters.")
+        if (db.folders().countNamed(accountId, name) > 0) {
+            throw VaultException("You already have a folder called \"$name\".", VaultException.Kind.Conflict)
+        }
+        val at = now()
+        val entity = FolderEntity(
+            accountId = accountId,
+            name = name,
+            icon = op.icon,
+            color = op.color,
+            sortOrder = 100,
+            createdAt = at,
+            updatedAt = at,
+        )
+        val id = db.folders().insert(entity).toInt()
+        return entity.copy(id = id).toDomain()
+    }
+
+    private suspend fun listDocuments(accountId: Int, op: ListDocuments): List<DocumentItem> {
+        val folders = mutableMapOf<Int, FolderEntity?>()
+        return db.documents().page(accountId, op.folderId, op.limit, offset(op.page, op.limit)).map { doc ->
+            val folder = doc.folderId?.let { id -> folders.getOrPut(id) { db.folders().byId(accountId, id) } }
+            doc.toDomain(folder)
+        }
+    }
+
+    private suspend fun storeDocument(accountId: Int, op: StoreDocument): DocumentItem {
+        if (op.bytes.isEmpty()) throw VaultException("That file is empty.")
+        if (op.bytes.size > MAX_DOCUMENT_BYTES) throw VaultException("That file is too large (max 25 MB).")
+        val folder = op.folderId?.let { db.folders().byId(accountId, it) ?: throw VaultException("That folder no longer exists.") }
+
+        val blob = files.write(accountId, op.bytes)
+        val at = now()
+        val entity = DocumentEntity(
+            accountId = accountId,
+            folderId = folder?.id,
+            title = op.title.trim().ifEmpty { op.fileName },
+            description = op.description?.trim().orEmpty(),
+            fileName = op.fileName,
+            fileType = op.fileType,
+            fileSize = op.bytes.size.toLong(),
+            blobPath = blob,
+            createdAt = at,
+            updatedAt = at,
+        )
+        val id = try {
+            db.documents().insert(entity).toInt()
+        } catch (e: Exception) {
+            files.delete(blob) // don't leave an orphaned blob behind
+            throw e
+        }
+        return entity.copy(id = id).toDomain(folder)
+    }
+
+    private suspend fun deleteDocument(accountId: Int, id: Int) {
+        val doc = db.documents().byId(accountId, id) ?: throw VaultException("Document not found.", VaultException.Kind.NotFound)
+        db.documents().delete(accountId, id)
+        files.delete(doc.blobPath)
+    }
+
+    private suspend fun readDocument(accountId: Int, id: Int): DocumentContent {
+        val doc = db.documents().byId(accountId, id) ?: throw VaultException("Document not found.", VaultException.Kind.NotFound)
+        val folder = doc.folderId?.let { db.folders().byId(accountId, it) }
+        val bytes = try {
+            files.read(doc.blobPath)
+        } catch (e: Exception) {
+            throw VaultException("This document could not be decrypted on this device.")
+        }
+        return DocumentContent(doc.toDomain(folder), bytes)
+    }
+
+    private fun offset(page: Int, limit: Int) = (page.coerceAtLeast(1) - 1) * limit
+
+    private fun FolderEntity.toDomain() = DocumentCategory(
+        id = id,
+        parentId = parentId,
+        name = name,
+        slug = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-'),
+        icon = icon,
+        color = color,
+        isDefault = isDefault,
+        isOwner = true,
+        sortOrder = sortOrder,
+    )
+
+    private fun DocumentEntity.toDomain(folder: FolderEntity?) = DocumentItem(
+        id = id,
+        title = title,
+        description = description,
+        documentType = fileType,
+        category = folder?.name.orEmpty(),
+        categoryId = folderId,
+        categoryIcon = folder?.icon.orEmpty(),
+        categoryColor = folder?.color.orEmpty(),
+        fileName = fileName,
+        fileType = fileType,
+        fileSize = fileSize,
+        createdAtEpochMs = createdAt,
+    )
+
     // ---- brute-force protection (persisted, so restarting the app doesn't reset it) ----
 
     private fun ensureNotLockedOut(account: AccountEntity) {
@@ -347,6 +493,7 @@ class Vault @Inject constructor(
         const val BASE_LOCKOUT_MS = 30_000L
         const val MAX_LOCKOUT_MS = 15 * 60_000L
         const val PRUNE_EVERY = 200L
+        const val MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
         const val AUDIT_RETENTION_MS = 180L * 24 * 60 * 60 * 1000
     }
 }

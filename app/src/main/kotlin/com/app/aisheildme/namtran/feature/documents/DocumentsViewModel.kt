@@ -9,9 +9,8 @@ import androidx.navigation.toRoute
 import com.app.aisheildme.namtran.core.common.AppException
 import com.app.aisheildme.namtran.core.common.PagedState
 import com.app.aisheildme.namtran.core.common.UiMessage
-import com.app.aisheildme.namtran.core.util.FileOpener
+import com.app.aisheildme.namtran.core.util.LocalFiles
 import com.app.aisheildme.namtran.core.util.MimeTypes
-import com.app.aisheildme.namtran.data.repository.AuthRepository
 import com.app.aisheildme.namtran.data.repository.DocumentRepository
 import com.app.aisheildme.namtran.domain.model.DocumentItem
 import com.app.aisheildme.namtran.navigation.DocumentsRoute
@@ -41,8 +40,7 @@ data class DocumentsUiState(
 @HiltViewModel
 class DocumentsViewModel @Inject constructor(
     private val documentRepository: DocumentRepository,
-    private val authRepository: AuthRepository,
-    private val fileOpener: FileOpener,
+
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -73,7 +71,6 @@ class DocumentsViewModel @Inject constructor(
             val page = _uiState.value.paging.page
             try {
                 val items = documentRepository.getDocuments(
-                    userId = authRepository.currentUser()?.id,
                     categoryId = args.categoryId.takeIf { it >= 0 },
                     page = page,
                     limit = PagedState.PAGE_SIZE,
@@ -91,12 +88,12 @@ class DocumentsViewModel @Inject constructor(
         if (_uiState.value.isOpening) return
         viewModelScope.launch {
             _uiState.update { it.copy(isOpening = true) }
-            val error = fileOpener.downloadAndOpen(
-                context = context,
-                url = document.fileUrl,
-                fileName = document.fileName.ifEmpty { document.title },
-                mimeType = document.fileType,
-            )
+            val error = try {
+                val (item, file) = documentRepository.decryptForViewing(document.id)
+                LocalFiles.open(context, file, item.fileType)
+            } catch (e: AppException) {
+                e.message
+            }
             _uiState.update {
                 it.copy(
                     isOpening = false,
@@ -157,7 +154,7 @@ class DocumentsViewModel @Inject constructor(
         val fileName = s.pickedFileName
         if (uri == null || fileName == null) {
             _uiState.update {
-                it.copy(message = UiMessage.error("Please select a file to upload."))
+                it.copy(message = UiMessage.error("Please choose a file to add."))
             }
             return
         }
@@ -178,7 +175,7 @@ class DocumentsViewModel @Inject constructor(
                         title = "",
                         pickedUri = null,
                         pickedFileName = null,
-                        message = UiMessage.success("Document uploaded"),
+                        message = UiMessage.success("Saved to your vault"),
                     )
                 }
                 loadFirstPage()

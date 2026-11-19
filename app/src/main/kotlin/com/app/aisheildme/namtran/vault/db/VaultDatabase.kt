@@ -23,6 +23,8 @@ internal abstract class VaultDatabase : RoomDatabase() {
     abstract fun checkIns(): CheckInSummaryDao
     abstract fun patientProfiles(): PatientProfileDao
     abstract fun patientReviews(): PatientReviewDao
+    abstract fun folders(): FolderDao
+    abstract fun documents(): DocumentDao
     abstract fun audit(): AuditDao
 
     companion object {

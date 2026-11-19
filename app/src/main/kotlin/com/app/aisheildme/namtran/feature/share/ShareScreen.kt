@@ -1,21 +1,21 @@
 package com.app.aisheildme.namtran.feature.share
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -27,8 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,13 +37,8 @@ import com.app.aisheildme.namtran.core.common.UiMessage
 import com.app.aisheildme.namtran.core.designsystem.AppColors
 import com.app.aisheildme.namtran.core.designsystem.component.AppSnackbarHost
 import com.app.aisheildme.namtran.core.designsystem.component.CustomButton
-import com.app.aisheildme.namtran.core.designsystem.component.CustomTextField
-import com.app.aisheildme.namtran.core.designsystem.component.EmptyState
-import com.app.aisheildme.namtran.core.designsystem.component.FullScreenLoader
 import com.app.aisheildme.namtran.core.designsystem.component.MessageEffect
 import com.app.aisheildme.namtran.core.designsystem.component.SimpleAppBar
-import com.app.aisheildme.namtran.core.designsystem.component.UserAvatar
-import com.app.aisheildme.namtran.domain.model.ShareableUser
 
 @Composable
 fun ShareScreen(
@@ -52,6 +48,7 @@ fun ShareScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.shared.collect(onShared)
@@ -69,111 +66,64 @@ fun ShareScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .padding(horizontal = 24.dp),
         ) {
-            Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                if (state.documentTitle.isNotBlank()) {
-                    Text(
-                        text = "Sharing \"${state.documentTitle}\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AppColors.TextHint,
-                    )
-                    Spacer(Modifier.size(12.dp))
-                }
-                CustomTextField(
-                    label = "Search",
-                    placeholder = "Search by name or email",
-                    value = state.query,
-                    onValueChange = viewModel::onQueryChange,
-                )
-            }
-            Spacer(Modifier.size(12.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Share outside your vault?",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.BrandText,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = state.documentTitle.ifBlank { "This document" },
+                style = MaterialTheme.typography.bodyLarge,
+                color = AppColors.BrandBlue,
+            )
+            Spacer(Modifier.height(20.dp))
 
-            Box(modifier = Modifier.weight(1f)) {
-                when {
-                    state.isLoadingUsers -> FullScreenLoader()
-
-                    state.filteredUsers.isEmpty() -> EmptyState(
-                        text = if (state.query.isBlank()) {
-                            "No one to share with yet"
-                        } else {
-                            "No one matches \"${state.query}\""
-                        },
-                    )
-
-                    else -> LazyColumn(
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 24.dp,
-                            vertical = 8.dp,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(state.filteredUsers, key = { it.email }) { user ->
-                            ContactRow(
-                                user = user,
-                                selected = user.email in state.selected,
-                                onToggle = { viewModel.toggle(user.email) },
-                            )
-                        }
-                    }
-                }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(AppColors.LightSurface)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Point(Icons.Outlined.Lock, "In your vault this document is encrypted and never leaves this phone.")
+                Point(Icons.Outlined.LockOpen, "Sharing makes an unencrypted copy for the app you choose next (email, messages, a printer…).")
+                Point(Icons.Outlined.PhoneAndroid, "AISM doesn't send it anywhere itself, and this share is recorded in your vault's activity log.")
             }
 
-            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                CustomButton(
-                    title = if (state.selected.isEmpty()) {
-                        "Share"
-                    } else {
-                        "Share with ${state.selected.size}"
-                    },
-                    onClick = viewModel::share,
-                    enabled = state.canShare,
-                    isLoading = state.isSharing,
-                    height = 44.dp,
-                )
-            }
+            Spacer(Modifier.weight(1f))
+
+            CustomButton(
+                title = "Share outside the vault",
+                onClick = { viewModel.share(context) },
+                isLoading = state.isSharing,
+                height = 46.dp,
+            )
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun ContactRow(
-    user: ShareableUser,
-    selected: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(AppColors.LightSurface)
-            .clickable(onClick = onToggle)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        UserAvatar(imageUrl = user.imageUrl.takeIf { it.isNotEmpty() }, size = 40.dp)
+private fun Point(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = AppColors.BrandBlue,
+            modifier = Modifier.size(20.dp),
+        )
         Spacer(Modifier.size(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = user.fullName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = AppColors.BrandText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = user.email,
-                style = MaterialTheme.typography.labelMedium,
-                color = AppColors.TextHint,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Checkbox(
-            checked = selected,
-            onCheckedChange = { onToggle() },
-            colors = CheckboxDefaults.colors(checkedColor = AppColors.BrandBlue),
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = AppColors.BlackText,
         )
     }
 }

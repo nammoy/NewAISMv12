@@ -1,5 +1,7 @@
 package com.app.aisheildme.namtran.vault
 
+import com.app.aisheildme.namtran.domain.model.DocumentCategory
+import com.app.aisheildme.namtran.domain.model.DocumentItem
 import com.app.aisheildme.namtran.domain.model.PatientPrefill
 import com.app.aisheildme.namtran.domain.model.PatientReview
 import com.app.aisheildme.namtran.domain.model.SavedCheckInSummary
@@ -85,6 +87,38 @@ data object GetPatientProfile : VaultOp<PatientPrefill?>
 data class SavePatientReview(val review: PatientReview) : VaultOp<Unit>
 
 data object LatestPatientReview : VaultOp<PatientReview?>
+
+// ---- Folders & documents ----
+
+/** Document-content operations: the Negotiator only allows them while the vault is unlocked. */
+sealed interface DocumentAccess
+
+data class ListFolders(val page: Int, val limit: Int) : VaultOp<List<DocumentCategory>>
+
+data class CreateFolder(val folderName: String, val icon: String, val color: String) : VaultOp<DocumentCategory>
+
+data class ListDocuments(val folderId: Int?, val page: Int, val limit: Int) :
+    VaultOp<List<DocumentItem>>, DocumentAccess
+
+/**
+ * Stores a new document. The bytes travel in the message; over future IPC this becomes a
+ * file descriptor handed to the vault process.
+ */
+class StoreDocument(
+    val title: String,
+    val description: String?,
+    val fileName: String,
+    val fileType: String,
+    val folderId: Int?,
+    val bytes: ByteArray,
+) : VaultOp<DocumentItem>, DocumentAccess
+
+data class DeleteDocument(val id: Int) : VaultOp<Unit>, DocumentAccess
+
+/** Decrypts a document for the owner to view, or for a consented share. */
+data class ReadDocument(val id: Int) : VaultOp<DocumentContent>, DocumentAccess
+
+class DocumentContent(val item: DocumentItem, val bytes: ByteArray)
 
 /** Raised by the vault for expected failures (wrong password, locked out, …). */
 class VaultException(message: String, val kind: Kind = Kind.Invalid) : Exception(message) {

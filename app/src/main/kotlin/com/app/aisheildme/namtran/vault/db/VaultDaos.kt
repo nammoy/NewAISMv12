@@ -84,3 +84,44 @@ internal interface AuditDao {
     @Query("DELETE FROM audit_log WHERE at < :before")
     suspend fun pruneBefore(before: Long)
 }
+
+@Dao
+internal interface FolderDao {
+
+    @Query("SELECT * FROM folders WHERE account_id = :accountId AND sync_state != 'DELETED' ORDER BY is_default DESC, sort_order, name COLLATE NOCASE LIMIT :limit OFFSET :offset")
+    suspend fun page(accountId: Int, limit: Int, offset: Int): List<FolderEntity>
+
+    @Query("SELECT COUNT(*) FROM folders WHERE account_id = :accountId")
+    suspend fun countAll(accountId: Int): Int
+
+    @Query("SELECT * FROM folders WHERE account_id = :accountId AND id = :id AND sync_state != 'DELETED'")
+    suspend fun byId(accountId: Int, id: Int): FolderEntity?
+
+    @Query("SELECT COUNT(*) FROM folders WHERE account_id = :accountId AND name = :name COLLATE NOCASE AND sync_state != 'DELETED'")
+    suspend fun countNamed(accountId: Int, name: String): Int
+
+    @Insert
+    suspend fun insert(folder: FolderEntity): Long
+
+    @Insert
+    suspend fun insertAll(folders: List<FolderEntity>)
+}
+
+@Dao
+internal interface DocumentDao {
+
+    @Query(
+        "SELECT * FROM documents WHERE account_id = :accountId AND sync_state != 'DELETED' " +
+            "AND (:folderId IS NULL OR folder_id = :folderId) ORDER BY created_at DESC LIMIT :limit OFFSET :offset",
+    )
+    suspend fun page(accountId: Int, folderId: Int?, limit: Int, offset: Int): List<DocumentEntity>
+
+    @Query("SELECT * FROM documents WHERE account_id = :accountId AND id = :id AND sync_state != 'DELETED'")
+    suspend fun byId(accountId: Int, id: Int): DocumentEntity?
+
+    @Insert
+    suspend fun insert(document: DocumentEntity): Long
+
+    @Query("DELETE FROM documents WHERE account_id = :accountId AND id = :id")
+    suspend fun delete(accountId: Int, id: Int)
+}

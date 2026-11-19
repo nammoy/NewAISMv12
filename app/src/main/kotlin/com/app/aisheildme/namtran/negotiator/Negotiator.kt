@@ -7,6 +7,8 @@ import com.app.aisheildme.namtran.domain.model.User
 import com.app.aisheildme.namtran.vault.Authenticate
 import com.app.aisheildme.namtran.vault.CreateAccount
 import com.app.aisheildme.namtran.vault.DeleteAccount
+import com.app.aisheildme.namtran.vault.DocumentAccess
+import com.app.aisheildme.namtran.vault.GetProfile
 import com.app.aisheildme.namtran.vault.ResetPassword
 import com.app.aisheildme.namtran.vault.Vault
 import com.app.aisheildme.namtran.vault.VaultException
@@ -124,7 +126,7 @@ class Negotiator @Inject constructor(
 
     // ---- policy ----
 
-    private fun policyDenial(accountId: Int?, purpose: Purpose, op: VaultOp<*>): String? = when {
+    private suspend fun policyDenial(accountId: Int?, purpose: Purpose, op: VaultOp<*>): String? = when {
         op is VaultOp.Unauthenticated<*> && purpose != Purpose.Authenticate ->
             "This request isn't allowed here."
 
@@ -137,7 +139,21 @@ class Negotiator @Inject constructor(
         purpose == Purpose.Authenticate && op !is VaultOp.Unauthenticated<*> ->
             "This request isn't allowed here."
 
+        op is DocumentAccess && !vaultUnlocked(accountId) ->
+            "Your vault is locked. Unlock it with your PIN or fingerprint to continue."
+
         else -> null
+    }
+
+    /**
+     * Document contents need a recent PIN/biometric unlock, enforced here as well as in the
+     * UI. "PIN every time" (timeout 0) still allows a short window to finish the action.
+     */
+    private suspend fun vaultUnlocked(accountId: Int?): Boolean {
+        if (accountId == null) return false
+        val profile = runCatching { vault.execute(NegotiatorPass, accountId, GetProfile) }.getOrNull()
+        val minutes = (profile?.pinExpiryTime ?: DEFAULT_PIN_MINUTES).coerceAtLeast(MIN_UNLOCK_MINUTES)
+        return vaultLock.isUnlocked(minutes)
     }
 
     private fun hasRecoveryGrant(email: String): Boolean {
@@ -194,5 +210,7 @@ class Negotiator @Inject constructor(
 
     private companion object {
         const val RECOVERY_WINDOW_MS = 10 * 60_000L
+        const val DEFAULT_PIN_MINUTES = 5
+        const val MIN_UNLOCK_MINUTES = 2
     }
 }
